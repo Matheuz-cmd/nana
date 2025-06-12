@@ -1,67 +1,149 @@
-#include <DHT.h>
+#include <Arduino.h>
 
-#define DHTPIN 4           // Pino do DHT11
-#define DHTTYPE DHT11
+#include <Dht.h>
+#include <Pir.h>
+#include <Fan.h>
 
-DHT dht(DHTPIN, DHTTYPE);
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/queue.h"
 
-const int pwmPin = 23;     // PWM azul (controle da fan)
-const int tachoPin = 34;   // Fio verde (leitura do tacômetro)
+TaskHandle_t xTaskHandleReadTemperature = NULL;
+TaskHandle_t xTaskHandleReadMovement = NULL;
+// TaskHandle_t xTaskHandleSetFanSpeed = NULL;
+TaskHandle_t xTaskHandlePrintStatus = NULL;
 
-volatile int pulseCount = 0;
-unsigned long lastRPMTime = 0;
+QueueHandle_t xQueueHandleTemperature = NULL;
+QueueHandle_t xQueueHandleMovement = NULL;
+QueueHandle_t xQueueHandleFanSpeed = NULL;
 
-void IRAM_ATTR countPulse() {
-  pulseCount++;
-}
+void vTaskReadTemperature(void *pvParams);
+void vTaskReadMovement(void *pvParams);
+// void vTaskSetFanSpeed(void *pvParams);
+void vTaskPrintStatus(void *pvParams);
 
-void setup() {
+void setup()
+{
   Serial.begin(115200);
-  dht.begin();
 
-  // PWM setup: canal 0, frequência 25 kHz, 8 bits
-  ledcSetup(0, 25000, 8);
-  ledcAttachPin(pwmPin, 0);  // PWM no fio azul da fan
+  dhtSetup();
+  pirSetup();
+  // fanSetup();
 
-  // Tacômetro
-  pinMode(tachoPin, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(tachoPin), countPulse, FALLING);
+  xQueueHandleTemperature = xQueueCreate(10, sizeof(float));
+  xQueueHandleMovement = xQueueCreate(10, sizeof(bool));
+  // xQueueHandleFanSpeed = xQueueCreate(10, sizeof(float));
+
+  xTaskCreatePinnedToCore(vTaskReadTemperature, "Read Temperature", 4096, NULL, 1, &xTaskHandleReadTemperature, 0);
+  xTaskCreatePinnedToCore(vTaskReadMovement, "Read Movement", 4096, NULL, 1, &xTaskHandleReadMovement, 0);
+  // xTaskCreatePinnedToCore(vTaskSetFanSpeed, "Set Fan Speed", 4096, NULL, 1, &xTaskHandleSetFanSpeed, 0);
+  xTaskCreatePinnedToCore(vTaskPrintStatus, "Printing Status", 4096, NULL, 1, &xTaskHandlePrintStatus, 0);
 }
 
-void loop() {
-  float temp = dht.readTemperature();
+void loop()
+{
+}
 
-  if (isnan(temp)) {
-    Serial.println("Erro ao ler o DHT11.");
-    delay(2000);
-    return;
+void vTaskReadTemperature(void *pvParams)
+{
+  while (1)
+  {
+    float temperature = getTemperature();
+
+    Serial.print(temperature);
+
+    if (isnan(temperature))
+    {
+      Serial.println("TASK 1: Error reading temperature!");
+    }
+    else
+    {
+      Serial.println("TASK 1: Reading temperature...");
+      xQueueSend(xQueueHandleTemperature, &temperature, pdMS_TO_TICKS(1000));
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(1000));
   }
+}
 
-  int pwmValue;
-  if (temp < 30.0) {
-    pwmValue = 0;   // Fan desligada
-  } else {
-    pwmValue = 255; // Fan em velocidade máxima
+void vTaskReadMovement(void *pvParams)
+{
+  while (1)
+  {
+    bool movementDetected = isMovementDetected();
+
+    if (isnan(movementDetected))
+    {
+      Serial.println("TASK 2: Error detecting movement!");
+    }
+    else
+    {
+      Serial.println("TASK 2: Detecting movement...");
+      xQueueSend(xQueueHandleMovement, &movementDetected, pdMS_TO_TICKS(200));
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(1000));
   }
+}
 
-  ledcWrite(0, 255 - pwmValue);  // PWM invertido (ativo em LOW)
+// void vTaskSetFanSpeed(void *pvParams)
+// {
+//   while (1)
+//   {
+//     float temperature;
+//     int newFanPwm;
 
-  // Cálculo de RPM
-  unsigned long currentTime = millis();
-  if (currentTime - lastRPMTime >= 1000) {
-    int pulses = pulseCount;
-    pulseCount = 0;
+//     xQueueReceive(xQueueHandleTemperature, &temperature, pdMS_TO_TICKS(1000));
 
-    int rpm = (pulses * 60) / 2;
-    Serial.print("Temperatura: ");
-    Serial.print(temp, 2);
-    Serial.print(" °C | PWM: ");
-    Serial.print(pwmValue);
-    Serial.print(" | RPM: ");
-    Serial.println(rpm);
+//     if (isnan(temperature))
+//     {
+//       Serial.println("TASK 3: Error Setting Fan Speed, Temperature Not Read!");
+//     }
+//     else
+//     {
+//       if (temperature < 32.0)
+//       {
+//         newFanPwm = 0;
+//       }
+//       else if (32.0 <= temperature < 34.0)
+//       {
+//         newFanPwm = 80;
+//       }
+//       else
+//       {
+//         newFanPwm = 255;
+//       }
 
-    lastRPMTime = currentTime;
+//       setFanSpeed(newFanPwm);
+//       xQueueSend(xQueueHandleFanSpeed, &newFanPwm, pdMS_TO_TICKS(200));
+//     }
+
+//     vTaskDelay(pdMS_TO_TICKS(1000));
+//   }
+// }
+
+void vTaskPrintStatus(void *pvParams)
+{
+  float temperature;
+  bool movementDetected;
+  // int fanPwm;
+
+  while (1)
+  {
+    if (
+        xQueueReceive(xQueueHandleTemperature, &temperature, pdMS_TO_TICKS(1000)) &&
+        xQueueReceive(xQueueHandleMovement, &movementDetected, pdMS_TO_TICKS(1000))
+        )
+    {
+      Serial.print("Temperature: ");
+      Serial.print(temperature);
+      Serial.print("°C | Movement Detection: ");
+      Serial.print(movementDetected ? "Detected" : "No Movement");
+      // Serial.print(" | Fan Speed: ");
+      // Serial.print((fanPwm / 255) * 100);
+      // Serial.println("%");
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(1000));
   }
-
-  delay(100);
 }
