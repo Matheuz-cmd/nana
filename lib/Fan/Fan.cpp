@@ -2,6 +2,7 @@
 #include "Pins.h"
 
 volatile int fanPwm = 0;
+volatile bool fanAutoMode = true; // NOVO: indica se está no modo automático
 
 void fanSetup()
 {
@@ -14,4 +15,16 @@ void setFanSpeed(int newFanPwm)
 {
     fanPwm = newFanPwm;
     ledcWrite(0, 255 - fanPwm);
+}
+
+// NOVO: permite ativar ou desativar o modo automático
+void setFanAutoMode(bool enabled)
+{
+    fanAutoMode = enabled;
+}
+
+// NOVO: permite consultar o modo atual
+bool isFanAutoMode()
+{
+    return fanAutoMode;
 }
