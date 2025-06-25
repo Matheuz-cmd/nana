@@ -1,14 +1,21 @@
 #include <Arduino.h>
 #include "Pins.h"
 
-volatile int fanPwm = 0;
-volatile bool fanAutoMode = true; // NOVO: indica se está no modo automático
+#define FAN_FREQ 25000
+#define RESOLUTION 8
+
+volatile int fanPwm = 120;
+volatile bool autoMode = true; 
 
 void fanSetup()
 {
-    // PWM setup: canal 0, frequência 25 kHz, 8 bits
-    ledcSetup(0, 25000, 8);
-    ledcAttachPin(FAN_PWM_PIN, 0); // PWM no fio azul da fan
+    ledcAttachPin(FAN_PWM_PIN, 0); 
+    ledcSetup(0, FAN_FREQ, RESOLUTION);
+}
+
+int getFanSpeed()
+{
+    return fanPwm;
 }
 
 void setFanSpeed(int newFanPwm)
@@ -17,14 +24,12 @@ void setFanSpeed(int newFanPwm)
     ledcWrite(0, 255 - fanPwm);
 }
 
-// NOVO: permite ativar ou desativar o modo automático
-void setFanAutoMode(bool enabled)
+bool isAutoMode()
 {
-    fanAutoMode = enabled;
+    return autoMode;
 }
 
-// NOVO: permite consultar o modo atual
-bool isFanAutoMode()
+void setAutoMode(bool newAutoMode)
 {
-    return fanAutoMode;
+    autoMode = newAutoMode;
 }

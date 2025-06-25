@@ -1,6 +1,7 @@
 #include "Fan.cpp"
 
 void fanSetup();
+int getFanSpeed();
 void setFanSpeed(int newFanPwm);
-void setFanAutoMode(bool enabled);
-bool isFanAutoMode();
+bool isAutoMode();
+void setAutoMode(bool newAutoMode);
