@@ -1,4 +1,4 @@
-#include "Dht.cpp"
+#include "Dht11.cpp"
 
 void dhtSetup();
 float getTemperature();

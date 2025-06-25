@@ -11,6 +11,5 @@ void dhtSetup()
 
 float getTemperature()
 {
-    Serial.print(dht.readTemperature());
     return dht.readTemperature();
 }
