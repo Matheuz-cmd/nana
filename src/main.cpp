@@ -1,78 +1,64 @@
 #include <Arduino.h>
-#include <WiFi.h>
-#include <HTTPClient.h>
-#include <ArduinoJson.h>
 
-#include <Dht.h>
+#include <Dht11.h>
 #include <Pir.h>
+#include <Ky.h>
 #include <Fan.h>
+// #include <Cam.h>
+// #include <MicroServo.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
 
-// Struct para comandos vindos da API
-typedef struct {
-  bool autoMode;
-  int manualPwm;
-} FanApiCommand;
-
-// Handles de tarefas
 TaskHandle_t xTaskHandleReadTemperature = NULL;
 TaskHandle_t xTaskHandleReadMovement = NULL;
+TaskHandle_t xTaskHandleReadNoise = NULL;
 TaskHandle_t xTaskHandleSetFanSpeed = NULL;
-TaskHandle_t xTaskHandlePrintStatus = NULL;
-TaskHandle_t xTaskHandleReceiveApi = NULL;
+TaskHandle_t xTaskHandleTakePicture = NULL;
+TaskHandle_t xTaskHandleSwingServo = NULL;
+TaskHandle_t xTaskHandlePrintStatus = NULL; // change to senData task further 
 
-// Queues
 QueueHandle_t xQueueHandleTemperature = NULL;
 QueueHandle_t xQueueHandleMovement = NULL;
+QueueHandle_t xQueueHandleNoise = NULL;
 QueueHandle_t xQueueHandleFanSpeed = NULL;
-QueueHandle_t xQueueHandleFanApiCommand = NULL;
 
-// Declaração das tasks
 void vTaskReadTemperature(void *pvParams);
 void vTaskReadMovement(void *pvParams);
+void vTaskReadNoise(void *pvParams);
 void vTaskSetFanSpeed(void *pvParams);
-void vTaskReceiveApiCommands(void *pvParams);
+void vTaskTakePicture(void *pvParams);
+void vTaskSwingServo(void *pvParams);
 void vTaskPrintStatus(void *pvParams);
 
 void setup()
 {
   Serial.begin(115200);
 
-  // Conexão Wi-Fi
-  WiFi.begin("SEU_WIFI", "SUA_SENHA");
-  Serial.print("Conectando ao Wi-Fi");
-  while (WiFi.status() != WL_CONNECTED)
-  {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println("\nWi-Fi conectado!");
-
-  // Inicialização de sensores
   dhtSetup();
   pirSetup();
+  // kySetup();
   fanSetup();
+  // camSetup();
+  // servoSetup();
 
-  // Criação das filas
   xQueueHandleTemperature = xQueueCreate(10, sizeof(float));
   xQueueHandleMovement = xQueueCreate(10, sizeof(bool));
+  xQueueHandleNoise = xQueueCreate(10, sizeof(int));
   xQueueHandleFanSpeed = xQueueCreate(10, sizeof(int));
-  xQueueHandleFanApiCommand = xQueueCreate(5, sizeof(FanApiCommand));
 
-  // Criação das tasks
-  xTaskCreatePinnedToCore(vTaskReadTemperature, "Read Temperature", 4096, NULL, 1, &xTaskHandleReadTemperature, 0);
-  xTaskCreatePinnedToCore(vTaskReadMovement, "Read Movement", 4096, NULL, 1, &xTaskHandleReadMovement, 0);
-  xTaskCreatePinnedToCore(vTaskSetFanSpeed, "Set Fan Speed", 4096, NULL, 1, &xTaskHandleSetFanSpeed, 0);
-  xTaskCreatePinnedToCore(vTaskReceiveApiCommands, "Receive API", 4096, NULL, 1, &xTaskHandleReceiveApi, 0);
-  xTaskCreatePinnedToCore(vTaskPrintStatus, "Printing Status", 4096, NULL, 1, &xTaskHandlePrintStatus, 0);
+  xTaskCreatePinnedToCore(vTaskReadTemperature, "[TASK 1] Read Temperature", 4096, NULL, 1, &xTaskHandleReadTemperature, 0);
+  xTaskCreatePinnedToCore(vTaskReadMovement, "[TASK 2] Read Movement", 4096, NULL, 1, &xTaskHandleReadMovement, 0);
+  // xTaskCreatePinnedToCore(vTaskReadNoise, "[TASK 3] Read Noise", 4096, NULL, 1, &xTaskHandleReadNoise, 0);
+  xTaskCreatePinnedToCore(vTaskSetFanSpeed, "[TASK 4] Set Fan Speed", 4096, NULL, 1, &xTaskHandleSetFanSpeed, 0);
+  // xTaskCreatePinnedToCore(vTaskTakePicture, "[TASK 5] Take PiCture", 4096, NULL, 1, &xTaskHandleTakePicture, 0);
+  // xTaskCreatePinnedToCore(vTaskSwingServo, "[TASK 6] Swing Servo", 4096, NULL, 1, &xTaskHandleSwingServo, 0);
+  xTaskCreatePinnedToCore(vTaskPrintStatus, "[TASK 7] Printing Status", 4096, NULL, 1, &xTaskHandlePrintStatus, 0);
 }
 
 void loop()
 {
-  // Nada aqui, FreeRTOS cuida de tudo nas tasks
 }
 
 void vTaskReadTemperature(void *pvParams)
@@ -81,15 +67,13 @@ void vTaskReadTemperature(void *pvParams)
   {
     float temperature = getTemperature();
 
-    if (isnan(temperature))
+    if (!isnan(temperature))
     {
-      Serial.println("TASK 1: Erro ao ler temperatura!");
-    }
-    else
-    {
-      Serial.println("TASK 1: Temperatura lida com sucesso.");
+      Serial.println("TASK 1: Reading Temperature...");
       xQueueSend(xQueueHandleTemperature, &temperature, pdMS_TO_TICKS(1000));
     }
+    else
+      Serial.println("TASK 1: Error reading temperature!");
 
     vTaskDelay(pdMS_TO_TICKS(1000));
   }
@@ -101,8 +85,35 @@ void vTaskReadMovement(void *pvParams)
   {
     bool movementDetected = isMovementDetected();
 
-    Serial.println("TASK 2: Detectando movimento...");
-    xQueueSend(xQueueHandleMovement, &movementDetected, pdMS_TO_TICKS(200));
+    if (movementDetected == true || movementDetected == false)
+    {
+      Serial.println("TASK 2: Reading Movement...");
+      xQueueSend(xQueueHandleMovement, &movementDetected, pdMS_TO_TICKS(200));
+    }
+    else
+    {
+      Serial.println("TASK 2: Error Reading Movement!");
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(1000));
+  }
+}
+
+void vTaskReadNoise(void *pvParams)
+{
+  while (1)
+  {
+    int noiseLevel = getNoiseLevel();
+
+    if (noiseLevel >= 0 && noiseLevel <= 4095)
+    {
+      Serial.println("TASK 3: Reading Noise Level...");
+      xQueueSend(xQueueHandleNoise, &noiseLevel, pdMS_TO_TICKS(200));
+    }
+    else
+    {
+      Serial.println("TASK 3: Error Reading Noise Level!");
+    }
 
     vTaskDelay(pdMS_TO_TICKS(1000));
   }
@@ -110,101 +121,81 @@ void vTaskReadMovement(void *pvParams)
 
 void vTaskSetFanSpeed(void *pvParams)
 {
-  FanApiCommand cmd;
-  int manualPwm = 0;
-
   while (1)
   {
-    // Recebe comandos da API
-    if (xQueueReceive(xQueueHandleFanApiCommand, &cmd, 0) == pdTRUE)
-    {
-      setFanAutoMode(cmd.autoMode);
-      if (!cmd.autoMode)
-      {
-        manualPwm = cmd.manualPwm;
-        xQueueSend(xQueueHandleFanSpeed, &manualPwm, pdMS_TO_TICKS(100));
-      }
-    }
+    int fanPwm; 
+    bool autoMode = isAutoMode();
 
-    if (isFanAutoMode())
+    if (autoMode)
     {
       float temperature;
+
       if (xQueueReceive(xQueueHandleTemperature, &temperature, pdMS_TO_TICKS(1000)) == pdTRUE)
       {
-        int newPwm = 0;
-
         if (!isnan(temperature))
         {
           if (temperature < 32.0)
-            newPwm = 0;
-          else if (temperature >= 32.0 && temperature < 34.0)
-            newPwm = 80;
+            fanPwm = 0;
+          else if (temperature >= 32.0 && temperature < 34.90)
+            fanPwm = 10;
           else
-            newPwm = 255;
-
-          setFanSpeed(newPwm);
-          xQueueSend(xQueueHandleFanSpeed, &newPwm, pdMS_TO_TICKS(200));
+            fanPwm = 255;
+            
+          Serial.println("TASK 4: Automatically Setting Fan Speed...");
         }
       }
+      else
+        Serial.println("TASK 4: Error Reading Temperature Values From Queue!");
     }
     else
     {
-      if (xQueueReceive(xQueueHandleFanSpeed, &manualPwm, pdMS_TO_TICKS(500)) == pdTRUE)
-      {
-        setFanSpeed(manualPwm);
+      fanPwm = getFanSpeed();
+      Serial.println("TASK 4: Manually Setting Fan Speed...");
+    }
+
+    setFanSpeed(fanPwm);
+    xQueueSend(xQueueHandleFanSpeed, &fanPwm, pdMS_TO_TICKS(200));
+    vTaskDelay(pdMS_TO_TICKS(1000));
+  }
+}
+
+void vTaskTakePicture(void *pvParams)
+{
+  while (1)
+  {
+    bool movementDetected;
+
+    if (xQueueReceive(xQueueHandleMovement, &movementDetected, pdMS_TO_TICKS(1000)) == pdTRUE)
+    {
+      if (movementDetected == true){
+        // Function to Take Picture in the Cam.cpp lib;
+        Serial.println("TASK 5: Taking Picture...");
       }
     }
+    else
+      Serial.println("TASK 5: Error Reading Movement Detection Values From Queue!");
 
     vTaskDelay(pdMS_TO_TICKS(1000));
   }
 }
 
-void vTaskReceiveApiCommands(void *pvParams)
+void vTaskSwingServo(void *pvParams)
 {
-  FanApiCommand cmd;
-
   while (1)
   {
-    if (WiFi.status() == WL_CONNECTED)
+    int noiseLevel;
+
+    if (xQueueReceive(xQueueHandleNoise, &noiseLevel, pdMS_TO_TICKS(1000)) == pdTRUE)
     {
-      HTTPClient http;
-      http.begin("http://meuservidor.com/api/fan"); // Troque pela URL real da sua API
-      int httpResponseCode = http.GET();
-
-      if (httpResponseCode == 200)
-      {
-        String payload = http.getString();
-        StaticJsonDocument<200> doc;
-        DeserializationError error = deserializeJson(doc, payload);
-
-        if (!error)
-        {
-          cmd.autoMode = doc["auto"];
-          cmd.manualPwm = constrain((int)doc["pwm"], 0, 255);
-
-          Serial.printf("API: Modo automático %s | PWM manual: %d\n",
-                        cmd.autoMode ? "ativado" : "desativado", cmd.manualPwm);
-
-          xQueueSend(xQueueHandleFanApiCommand, &cmd, pdMS_TO_TICKS(100));
-        }
-        else
-        {
-          Serial.println("Erro ao interpretar JSON da API");
-        }
+      if (noiseLevel >= 4000){
+        // startSwing();
+        Serial.println("TASK 6: Swinging Micro Servo...");
       }
-      else
-      {
-        Serial.printf("Erro HTTP da API: %d\n", httpResponseCode);
-      }
-
-      http.end();
     }
     else
-    {
-      Serial.println("WiFi desconectado, não foi possível acessar a API.");
-    }
+      Serial.println("TASK 6: Error Reading Noise Levels From Queue!");
 
-    vTaskDelay(pdMS_TO_TICKS(10000)); // espera 10 segundos
+    vTaskDelay(pdMS_TO_TICKS(1000));
   }
 }
 
@@ -212,6 +203,7 @@ void vTaskPrintStatus(void *pvParams)
 {
   float temperature;
   bool movementDetected;
+  int noiseLevel;
   int fanPwm;
 
   while (1)
@@ -221,13 +213,14 @@ void vTaskPrintStatus(void *pvParams)
         xQueueReceive(xQueueHandleMovement, &movementDetected, pdMS_TO_TICKS(1000)) &&
         xQueueReceive(xQueueHandleFanSpeed, &fanPwm, pdMS_TO_TICKS(1000)))
     {
-      Serial.print("Temperature: ");
+      Serial.println("\nTemperature (°C): ");
       Serial.print(temperature);
-      Serial.print("°C | Movement Detection: ");
+      Serial.println("\nNoise Level: ");
+      Serial.print(noiseLevel);
+      Serial.println("\nMovement Detection: ");
       Serial.print(movementDetected ? "Detected" : "No Movement");
-      Serial.print(" | Fan Speed: ");
-      Serial.print((fanPwm * 100) / 255);
-      Serial.println("%");
+      Serial.println("\nFan PWM: ");
+      Serial.print(fanPwm);
     }
 
     vTaskDelay(pdMS_TO_TICKS(1000));
