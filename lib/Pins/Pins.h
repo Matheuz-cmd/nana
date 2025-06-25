@@ -1,7 +1,7 @@
 // SENSORS PINS
 #define PIR_PIN 18
 #define DHT_PIN 19
-#define KY_PIN 32 // GPIO 32 while using ADC Driver
+#define KY_PIN 32 
 
 // FAN PINS
 #define FAN_PWM_PIN 5
