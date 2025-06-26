@@ -15,7 +15,7 @@ void startSwing()
   for (angle = 75; angle <= 105; angle++)
   {
     servo.write(angle);
-    delay(50); // Ajuste conforme suavidade desejada
+    delay(50); 
   }
 
   for (angle = 105; angle >= 75; angle--)
