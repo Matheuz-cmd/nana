@@ -1,5 +1,4 @@
-#include <Arduino.h>
-
+#include <Connection.h>
 #include <Dht11.h>
 #include <Pir.h>
 #include <Ky.h>
@@ -17,7 +16,8 @@ TaskHandle_t xTaskHandleReadNoise = NULL;
 TaskHandle_t xTaskHandleSetFanSpeed = NULL;
 TaskHandle_t xTaskHandleTakePicture = NULL;
 TaskHandle_t xTaskHandleSwingServo = NULL;
-TaskHandle_t xTaskHandlePrintStatus = NULL; // change to senData task further 
+TaskHandle_t xTaskHandleRequestFanData = NULL;
+TaskHandle_t xTaskHandleSendData = NULL;
 
 QueueHandle_t xQueueHandleTemperature = NULL;
 QueueHandle_t xQueueHandleMovement = NULL;
@@ -30,15 +30,17 @@ void vTaskReadNoise(void *pvParams);
 void vTaskSetFanSpeed(void *pvParams);
 void vTaskTakePicture(void *pvParams);
 void vTaskSwingServo(void *pvParams);
-void vTaskPrintStatus(void *pvParams);
+void vTaskRequestFanData(void *pvParams);
+void vTaskSendData(void *pvParams);
 
 void setup()
 {
   Serial.begin(115200);
 
+  // connectionSetup();
   dhtSetup();
   pirSetup();
-  // kySetup();
+  kySetup();
   fanSetup();
   // camSetup();
   // servoSetup();
@@ -50,11 +52,12 @@ void setup()
 
   xTaskCreatePinnedToCore(vTaskReadTemperature, "[TASK 1] Read Temperature", 4096, NULL, 1, &xTaskHandleReadTemperature, 0);
   xTaskCreatePinnedToCore(vTaskReadMovement, "[TASK 2] Read Movement", 4096, NULL, 1, &xTaskHandleReadMovement, 0);
-  // xTaskCreatePinnedToCore(vTaskReadNoise, "[TASK 3] Read Noise", 4096, NULL, 1, &xTaskHandleReadNoise, 0);
+  xTaskCreatePinnedToCore(vTaskReadNoise, "[TASK 3] Read Noise", 4096, NULL, 1, &xTaskHandleReadNoise, 0);
   xTaskCreatePinnedToCore(vTaskSetFanSpeed, "[TASK 4] Set Fan Speed", 4096, NULL, 1, &xTaskHandleSetFanSpeed, 0);
-  // xTaskCreatePinnedToCore(vTaskTakePicture, "[TASK 5] Take PiCture", 4096, NULL, 1, &xTaskHandleTakePicture, 0);
-  // xTaskCreatePinnedToCore(vTaskSwingServo, "[TASK 6] Swing Servo", 4096, NULL, 1, &xTaskHandleSwingServo, 0);
-  xTaskCreatePinnedToCore(vTaskPrintStatus, "[TASK 7] Printing Status", 4096, NULL, 1, &xTaskHandlePrintStatus, 0);
+  xTaskCreatePinnedToCore(vTaskTakePicture, "[TASK 5] Take Picture", 4096, NULL, 1, &xTaskHandleTakePicture, 0);
+  xTaskCreatePinnedToCore(vTaskSwingServo, "[TASK 6] Swing Servo", 4096, NULL, 1, &xTaskHandleSwingServo, 0);
+  //xTaskCreatePinnedToCore(vTaskRequestFanData, "[TASK 7] Request Fan Data From API", 4096, NULL, 1, &xTaskHandleRequestFanData, 1);
+  xTaskCreatePinnedToCore(vTaskSendData, "[TASK 8] Send Data", 4096, NULL, 1, &xTaskHandleSendData, 1);
 }
 
 void loop()
@@ -69,13 +72,13 @@ void vTaskReadTemperature(void *pvParams)
 
     if (!isnan(temperature))
     {
-      Serial.println("TASK 1: Reading Temperature...");
-      xQueueSend(xQueueHandleTemperature, &temperature, pdMS_TO_TICKS(1000));
+      Serial.println("[TASK 1] Reading Temperature...");
+      xQueueSend(xQueueHandleTemperature, &temperature, pdMS_TO_TICKS(800));
     }
     else
-      Serial.println("TASK 1: Error reading temperature!");
+      Serial.println("[TASK 1] Error Reading Temperature!");
 
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    vTaskDelay(pdMS_TO_TICKS(500));
   }
 }
 
@@ -87,15 +90,15 @@ void vTaskReadMovement(void *pvParams)
 
     if (movementDetected == true || movementDetected == false)
     {
-      Serial.println("TASK 2: Reading Movement...");
-      xQueueSend(xQueueHandleMovement, &movementDetected, pdMS_TO_TICKS(200));
+      Serial.println("[TASK 2] Reading Movement...");
+      xQueueSend(xQueueHandleMovement, &movementDetected, pdMS_TO_TICKS(800));
     }
     else
     {
-      Serial.println("TASK 2: Error Reading Movement!");
+      Serial.println("[TASK 2] Error Reading Movement!");
     }
 
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    vTaskDelay(pdMS_TO_TICKS(500));
   }
 }
 
@@ -107,15 +110,15 @@ void vTaskReadNoise(void *pvParams)
 
     if (noiseLevel >= 0 && noiseLevel <= 4095)
     {
-      Serial.println("TASK 3: Reading Noise Level...");
-      xQueueSend(xQueueHandleNoise, &noiseLevel, pdMS_TO_TICKS(200));
+      Serial.println("[TASK 3] Reading Noise Level...");
+      xQueueSend(xQueueHandleNoise, &noiseLevel, pdMS_TO_TICKS(800));
     }
     else
     {
-      Serial.println("TASK 3: Error Reading Noise Level!");
+      Serial.println("[TASK 3] Error Reading Noise Level!");
     }
 
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    vTaskDelay(pdMS_TO_TICKS(500));
   }
 }
 
@@ -123,38 +126,23 @@ void vTaskSetFanSpeed(void *pvParams)
 {
   while (1)
   {
-    int fanPwm; 
-    bool autoMode = isAutoMode();
+    int fanSpeed;
+    float temperature;
 
-    if (autoMode)
+    if (xQueueReceive(xQueueHandleTemperature, &temperature, pdMS_TO_TICKS(800)) == pdTRUE)
     {
-      float temperature;
-
-      if (xQueueReceive(xQueueHandleTemperature, &temperature, pdMS_TO_TICKS(1000)) == pdTRUE)
-      {
-        if (!isnan(temperature))
-        {
-          if (temperature < 32.0)
-            fanPwm = 0;
-          else if (temperature >= 32.0 && temperature < 34.90)
-            fanPwm = 10;
-          else
-            fanPwm = 255;
-            
-          Serial.println("TASK 4: Automatically Setting Fan Speed...");
-        }
-      }
+      if (isAutoMode())
+        Serial.println("[TASK 4] Automatically Setting Fan Speed...");
       else
-        Serial.println("TASK 4: Error Reading Temperature Values From Queue!");
+        Serial.println("[TASK 4] Manually Setting Fan Speed from API Data...");
+
+      setFanPWM(temperature);
     }
     else
-    {
-      fanPwm = getFanSpeed();
-      Serial.println("TASK 4: Manually Setting Fan Speed...");
-    }
+      Serial.println("[TASK 4] Temperature Queue is Empty!");
 
-    setFanSpeed(fanPwm);
-    xQueueSend(xQueueHandleFanSpeed, &fanPwm, pdMS_TO_TICKS(200));
+    fanSpeed = getFanPWM();
+    xQueueSend(xQueueHandleFanSpeed, &fanSpeed, pdMS_TO_TICKS(800));
     vTaskDelay(pdMS_TO_TICKS(1000));
   }
 }
@@ -165,15 +153,17 @@ void vTaskTakePicture(void *pvParams)
   {
     bool movementDetected;
 
-    if (xQueueReceive(xQueueHandleMovement, &movementDetected, pdMS_TO_TICKS(1000)) == pdTRUE)
+    if (xQueueReceive(xQueueHandleMovement, &movementDetected, pdMS_TO_TICKS(800)) == pdTRUE)
     {
-      if (movementDetected == true){
-        // Function to Take Picture in the Cam.cpp lib;
-        Serial.println("TASK 5: Taking Picture...");
+      if (movementDetected == true)
+      {
+        // type pic = takePicture();
+        // sendPicture(pic);
+        Serial.println("[TASK 5] Taking Picture...");
       }
     }
     else
-      Serial.println("TASK 5: Error Reading Movement Detection Values From Queue!");
+      Serial.println("[TASK 5] Movement Detection Queue is Empty!");
 
     vTaskDelay(pdMS_TO_TICKS(1000));
   }
@@ -183,45 +173,58 @@ void vTaskSwingServo(void *pvParams)
 {
   while (1)
   {
-    int noiseLevel;
+    bool movementDetected;
 
-    if (xQueueReceive(xQueueHandleNoise, &noiseLevel, pdMS_TO_TICKS(1000)) == pdTRUE)
+    if (xQueueReceive(xQueueHandleMovement, &movementDetected, pdMS_TO_TICKS(800)) == pdTRUE)
     {
-      if (noiseLevel >= 4000){
+      if (movementDetected == true)
+      {
         // startSwing();
-        Serial.println("TASK 6: Swinging Micro Servo...");
+        Serial.println("[TASK 6] Swinging Micro Servo...");
       }
     }
     else
-      Serial.println("TASK 6: Error Reading Noise Levels From Queue!");
+      Serial.println("[TASK 6] Movement Detection Queue is Empty!");
 
     vTaskDelay(pdMS_TO_TICKS(1000));
   }
 }
 
-void vTaskPrintStatus(void *pvParams)
+void vTaskRequestFanData(void *pvParams)
+{
+  while (1)
+  {
+    vTaskDelay(pdMS_TO_TICKS(500));
+  }
+}
+
+void vTaskSendData(void *pvParams)
 {
   float temperature;
   bool movementDetected;
   int noiseLevel;
-  int fanPwm;
+  int fanSpeed;
 
   while (1)
   {
     if (
         xQueueReceive(xQueueHandleTemperature, &temperature, pdMS_TO_TICKS(1000)) &&
         xQueueReceive(xQueueHandleMovement, &movementDetected, pdMS_TO_TICKS(1000)) &&
-        xQueueReceive(xQueueHandleFanSpeed, &fanPwm, pdMS_TO_TICKS(1000)))
+        xQueueReceive(xQueueHandleNoise, &noiseLevel, pdMS_TO_TICKS(1000)) &&
+        xQueueReceive(xQueueHandleFanSpeed, &fanSpeed, pdMS_TO_TICKS(1000)))
     {
       Serial.println("\nTemperature (°C): ");
-      Serial.print(temperature);
-      Serial.println("\nNoise Level: ");
-      Serial.print(noiseLevel);
+      Serial.println(temperature);
       Serial.println("\nMovement Detection: ");
-      Serial.print(movementDetected ? "Detected" : "No Movement");
-      Serial.println("\nFan PWM: ");
-      Serial.print(fanPwm);
+      Serial.println(movementDetected ? "Detected" : "No Movement");
+      Serial.println("\nNoise Level: ");
+      Serial.println(noiseLevel);
+      Serial.println("\nFan Speed (PWM): ");
+      Serial.println(fanSpeed);
+      Serial.println("\n");
     }
+
+    //senData()
 
     vTaskDelay(pdMS_TO_TICKS(1000));
   }
