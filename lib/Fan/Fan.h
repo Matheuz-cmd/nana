@@ -1,7 +1,7 @@
 #include "Fan.cpp"
 
 void fanSetup();
-int getFanSpeed();
-void setFanSpeed(int newFanPwm);
+int getFanPWM();
+void setFanPWM(float temperature);
 bool isAutoMode();
 void setAutoMode(bool newAutoMode);
