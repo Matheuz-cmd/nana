@@ -1,6 +1,6 @@
 // SENSORS PINS
-#define PIR_PIN 18
-#define DHT_PIN 19
+#define DHT_PIN 18
+#define PIR_PIN 19
 #define KY_PIN 32 
 
 // FAN PINS
