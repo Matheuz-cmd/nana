@@ -1,4 +1,4 @@
-#include "Dht11.cpp"
-
 void dhtSetup();
+bool getDhtStatus();
+void setDhtStatus(bool newStatus);
 float getTemperature();
