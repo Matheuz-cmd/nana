@@ -1,10 +1,11 @@
 #include <Arduino.h>
 #include "Pins.h"
+#include "Fan.h"
 
 #define FAN_FREQ 25000
 #define RESOLUTION 8
 
-volatile int fanPWM = 60;
+volatile int fanPWM = 0;
 volatile bool autoMode = true;
 
 void fanSetup()
@@ -18,33 +19,18 @@ int getFanPWM()
     return fanPWM;
 }
 
-void IRAM_ATTR setFanPWM(float temperature)
+void setFanPWM(int newFanPWM)
 {
-    if (autoMode)
-    {
-        if (temperature < 32.0)
-        {
-            fanPWM = 0;
-        }
-        else if (temperature >= 32.0 && temperature < 34.90)
-        {
-            fanPWM = 120;
-        }
-        else
-            fanPWM = 255;
-    }
-    else
-        fanPWM; 
-
+    fanPWM = newFanPWM;
     ledcWrite(0, 255 - fanPWM);
 }
 
-bool isAutoMode()
+bool isFanAutoMode()
 {
     return autoMode;
 }
 
-void setAutoMode(bool newMode)
+void setFanAutoMode(bool newMode)
 {
     autoMode = newMode;
 }
