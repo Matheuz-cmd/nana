@@ -15,12 +15,12 @@ void startSwing()
   for (angle = 75; angle <= 105; angle++)
   {
     servo.write(angle);
-    delay(50); 
+    delay(40); 
   }
 
   for (angle = 105; angle >= 75; angle--)
   {
     servo.write(angle);
-    delay(50);
+    delay(40);
   }
 }
