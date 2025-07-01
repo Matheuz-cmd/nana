@@ -1,4 +1,4 @@
-#include "Ky.cpp"
-
 void kySetup();
+bool getKyStatus();
+void setKyStatus(bool newStatus);
 int getNoiseLevel();
