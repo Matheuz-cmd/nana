@@ -1,7 +1,5 @@
 #include <WiFiClientSecure.h>
-
-#define SSID "SSID"
-#define PASSWORD "PASSWORD"
+#include <Secrets.h>
 
 void connectionSetup()
 {

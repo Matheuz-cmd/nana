@@ -1,2 +1,0 @@
-void camSetup();
-void takePicture();

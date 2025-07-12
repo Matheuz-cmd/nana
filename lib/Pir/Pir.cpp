@@ -18,7 +18,7 @@ void setPirStatus(bool newStatus){
     pirStatus = newStatus;
 }
 
-bool IRAM_ATTR isMovementDetected()
+bool isMovementDetected()
 {
     return digitalRead(PIR_PIN);
 }
