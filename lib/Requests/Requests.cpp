@@ -1,10 +1,15 @@
+#include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include "Requests.h"
+#include "Secrets.h"
 
-#define API_BASE_URL "https://vnxdbpr2-3001.brs.devtunnels.ms"
-
-HTTPClient http;
+WiFiClientSecure *dataClient = new WiFiClientSecure;
+WiFiClientSecure *servoClient = new WiFiClientSecure;
+WiFiClientSecure *fanClient = new WiFiClientSecure;
+HTTPClient httpData;
+HTTPClient httpServo;
+HTTPClient httpFan;
 
 void sendData(
     bool dhtStatus,
@@ -13,11 +18,13 @@ void sendData(
     float temperature,
     bool movementDetected,
     int noiseLevel,
+    bool fanAutoMode,
     int fanSpeed)
 {
-    http.begin(String(API_BASE_URL) + "/api/data");
+    dataClient->setCACert(CERT);
+    httpData.begin(*dataClient, String(API_URL) + "/api/data");
 
-    http.addHeader("Content-Type", "application/json");
+    httpData.addHeader("Content-Type", "application/json");
 
     JsonDocument jsonDoc;
     jsonDoc["tempSensorStatus"] = dhtStatus;
@@ -26,37 +33,53 @@ void sendData(
     jsonDoc["temperature"] = temperature;
     jsonDoc["movementDetected"] = movementDetected;
     jsonDoc["noiseLevel"] = noiseLevel;
+    jsonDoc["fanAutoMode"] = fanAutoMode;
     jsonDoc["fanSpeed"] = fanSpeed;
 
     String jsonString;
     serializeJson(jsonDoc, jsonString);
 
-    int httpResponseCode = http.POST(jsonString);
+    int httpResponseCode = httpData.POST(jsonString);
 
-    // Verificar o response code
-
-    http.end();
+    httpData.end();
 }
 
-void sendPicture()
+void sendServoEvent()
 {
+    servoClient->setCACert(CERT);
+    httpServo.begin(*servoClient, String(API_URL) + "/api/event");
+
+    httpServo.addHeader("Content-Type", "application/json");
+
+    JsonDocument jsonDoc;
+    jsonDoc["name"] = "servo-swing";
+
+    String jsonString;
+    serializeJson(jsonDoc, jsonString);
+
+    Serial.println(jsonString);
+
+    int httpResponseCode = httpServo.POST(jsonString);
+
+    httpServo.end();
 }
 
 int requestFanData()
 {
-    http.begin(String(API_BASE_URL) + "/api/fan");
+    fanClient->setCACert(CERT);
+    httpFan.begin(*fanClient, String(API_URL) + "/api/fan");
 
-    int httpCode = http.GET();
+    int httpCode = httpFan.GET();
 
     if (httpCode == HTTP_CODE_OK)
     {
-        String payload = http.getString();
+        String payload = httpFan.getString();
         JsonDocument jsonDoc;
         DeserializationError error = deserializeJson(jsonDoc, payload);
 
         if (!error)
         {
-            bool autoMode = jsonDoc["data"]["autoMode"];
+            bool autoMode = jsonDoc["data"]["fanAutoMode"];
             int fanSpeed = jsonDoc["data"]["fanSpeed"];
 
             if (autoMode)
@@ -65,12 +88,12 @@ int requestFanData()
                 return fanSpeed;
         }
         else
-            Serial.println("[REQUEST FAN DATA] Error Parsin Fan Data JSON");
+            Serial.println("[REQUEST FAN DATA] Error Parsing Fan Data JSON");
     }
     else
         Serial.println("[REQUEST FAN DATA] Request Failed: " + String(httpCode));
 
-    http.end();
+    httpFan.end();
 
     return -2;
 }
