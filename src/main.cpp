@@ -141,11 +141,11 @@ void vTaskSetFanSpeed(void *pvParams)
 
       if (xQueueReceive(xQueueHandleTemperature, &temperature, pdMS_TO_TICKS(800)))
       {
-        if (temperature < 32.0)
+        if (temperature < 30.8)
         {
           fanSpeed = 0;
         }
-        else if (temperature >= 32.0 && temperature < 34.90)
+        else if (temperature >= 30.8 && temperature < 32.0)
         {
           fanSpeed = 120;
         }
@@ -179,7 +179,7 @@ void vTaskSwingServo(void *pvParams)
     {
       if (movementDetected)
       {
-        // startSwing();
+        startSwing();
         Serial.println("[TASK 5] Swinging Micro Servo...");
         sendServoEvent();
         vTaskDelay(pdMS_TO_TICKS(5000));
