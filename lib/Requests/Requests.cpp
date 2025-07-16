@@ -57,8 +57,6 @@ void sendServoEvent()
     String jsonString;
     serializeJson(jsonDoc, jsonString);
 
-    Serial.println(jsonString);
-
     int httpResponseCode = httpServo.POST(jsonString);
 
     httpServo.end();
