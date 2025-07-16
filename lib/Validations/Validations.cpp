@@ -12,5 +12,5 @@ bool validateMovementReading(bool movementDetected)
 
 bool validateNoiseLevelReading(int noiseLevel)
 {
-    return noiseLevel >= 800;
+    return noiseLevel >= 1200;
 }
