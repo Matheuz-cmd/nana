@@ -4,14 +4,16 @@
 
 #define FAN_FREQ 25000
 #define RESOLUTION 8
+#define FAN_PWM_CHANNEL 0
 
 volatile int fanPWM = 0;
 volatile bool autoMode = true;
 
 void fanSetup()
 {
-    ledcAttachPin(FAN_PWM_PIN, 0);
-    ledcSetup(0, FAN_FREQ, RESOLUTION);
+    ledcSetup(FAN_PWM_CHANNEL, FAN_FREQ, RESOLUTION);
+    ledcAttachPin(FAN_PWM_PIN, FAN_PWM_CHANNEL);
+    Serial.println("[FAN SETUP] Fan Setup Sucessful!");
 }
 
 int getFanPWM()
